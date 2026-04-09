@@ -1,11 +1,12 @@
 import psycopg2
+import os
 
 conn = psycopg2.connect(
     host='localhost',
     port=5435,
-    dbname='mini_whatsapp',
-    user='postgres',
-    password='postgres'
+    dbname=os.getenv('POSTGRES_DB'),
+    user=os.getenv('POSTGRES_USER'),
+    password=os.getenv('POSTGRES_PASSWORD')
     )
 
 cur = conn.cursor()
