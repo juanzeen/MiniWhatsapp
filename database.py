@@ -6,7 +6,7 @@ load_dotenv()
 
 conn = psycopg2.connect(
     host='localhost',
-    port=5435,
+    port=os.getenv('POSTGRES_PORT'),
     dbname=os.getenv('POSTGRES_DB'),
     user=os.getenv('POSTGRES_USER'),
     password=os.getenv('POSTGRES_PASSWORD')
