@@ -2,7 +2,7 @@ URI = "ws://127.1.1.1:5000"
 
 def phone_check(phone):
     if len(phone) > 20:
-            print("Número de Telefone muito grande (tam max: 20)\n")
+        print("Número de Telefone muito grande (tam max: 20)\n")
     elif len(phone) < 11:
         print("Número de Telefone muito pequeno (tam min: 11)\n")
     else:
@@ -31,7 +31,7 @@ def nickname_check(nickname):
 
 def password_check(password):
     if len(password) > 100:
-            print("Senha muito grande (tam max: 100)\n")
+        print("Senha muito grande (tam max: 100)\n")
     elif len(password) < 8:
         print("Senha muito pequena (tam min: 8)\n")
     else:
