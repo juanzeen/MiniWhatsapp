@@ -84,18 +84,17 @@ async def main():
 
                                     response = await websocket.recv()
                                     data = json.loads(response)
+                                    contacts = data["contacts"]
 
-                                    if not data["contact_numbers"]:
+                                    if not contacts:
                                         print("Você não possui contatos salvos. Adicione um novo contato para iniciar uma conversa.\n")
                                         continue
                                     else:
-                                        contact_names = data["contact_names"]
-                                        contact_numbers = data["contact_numbers"]
-                                        for i, contact_number in enumerate(contact_numbers):
-                                            print(f"{i}- {contact_names[i]} ({contact_number})\n\n")
-                                        
-                                        selected_conversation = int(input("Selecione o contato da conversa: "))
-                                        contact_phone = contact_numbers[selected_conversation]
+                                        for i, ctt in enumerate(contacts):
+                                            print(f"{i+1} - {ctt["name"]} ({ctt["phone"]})\n\n")
+
+                                        selected_conversation = int(input("Selecione o contato da conversa: ")) - 1
+                                        contact_phone = contacts[selected_conversation]["phone"]
 
                                         await websocket.send(json.dumps({
                                             "type": "MESSAGE_HISTORY",

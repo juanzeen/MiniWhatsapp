@@ -50,6 +50,17 @@ async def handle_message(websocket, json_msg):
             print(f"Mensagem de {sender_phone} para {receiver_phone} registrada com sucesso!")
         await websocket.send(json.dumps(res))
 
+    elif message_type == "CONTACTS_LIST":
+        phone= json_msg.get("phone")
+        res = await asyncio.to_thread(
+            repository.get_contacts,
+            phone=phone
+        )
+        print(res)
+        if res["contacts_status"] == "success":
+            print(f"Lista de contatos de {phone} resgatada com sucesso!\n {list(res['contacts'])}")
+        await websocket.send(json.dumps(res))
+
 #Handler para lidar com as mensagens recebidas dos clientes, roda o tempo todo no WS
 async def handler(websocket):
     async for message in websocket:

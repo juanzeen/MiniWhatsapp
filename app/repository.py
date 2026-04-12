@@ -92,3 +92,18 @@ def get_messages(*, sender_phone, receiver_phone):
             return {"messages_status": "success", "messages": [{"sender_phone": data[0], "receiver_phone": data[1], "content": data[2]} for data in messages]}
     except:
         return {"messages_status": "error", "reason": "Database error"}
+
+def get_contacts(*, phone):
+    conn = get_db_connection()
+    if conn is None:
+        return {"contacts_status": "error", "reason": "Database connection failed"}
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT DISTINCT u.name, u.phone FROM users u JOIN messages m ON (u.phone = m.sender_phone AND m.receiver_phone = %s) OR (u.phone = m.receiver_phone AND m.sender_phone = %s)",
+                (phone, phone)
+            )
+            contacts = cur.fetchall()
+            return {"contacts_status": "success", "contacts": [{"name":data[0], "phone": data[1]} for data in contacts]}
+    except:
+        return {"contacts_status": "error", "reason": "Database error"}
