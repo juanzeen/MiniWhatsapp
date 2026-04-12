@@ -1,4 +1,4 @@
-URI = "ws://127.1.1.1:5000"
+URI = "ws://127.0.0.1:5000"
 
 def phone_check(phone):
     if len(phone) > 20:

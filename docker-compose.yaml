@@ -1,10 +1,10 @@
 services:
-  db:
+  mini_whatsapp_db:
     container_name: mini_whatsapp_db
     image: postgres:17-alpine
     restart: always
     environment:
-      POSTGRES_DB: mini_whatsapp
+      POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
