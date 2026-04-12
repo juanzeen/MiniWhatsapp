@@ -1,4 +1,11 @@
-URI = "ws://127.0.0.1:5000"
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+server_host = os.getenv("SERVER_HOST")
+server_port = os.getenv("SERVER_PORT")
+URI = f"ws://{server_host}:{server_port}"
 
 def phone_check(phone):
     if len(phone) > 20:
