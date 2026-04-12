@@ -107,7 +107,7 @@ async def main():
 
                                         history = data.get("messages", [])
                                         for msg in history:
-                                            if msg["sender"] == phone:
+                                            if msg["sender_phone"] == phone:
                                                 print(f"Você [{msg['timestamp']}]: {msg['content']}")
                                             else:
                                                 print(f"Contato [{msg['timestamp']}]: {msg['content']}")

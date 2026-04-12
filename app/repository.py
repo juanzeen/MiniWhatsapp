@@ -85,11 +85,11 @@ def get_messages(*, sender_phone, receiver_phone):
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT sender_phone, receiver_phone, content FROM messages WHERE (sender_phone = %s AND receiver_phone = %s) OR (sender_phone = %s AND receiver_phone = %s) ORDER BY id",
+                "SELECT sender_phone, receiver_phone, content, timestamp FROM messages WHERE (sender_phone = %s AND receiver_phone = %s) OR (sender_phone = %s AND receiver_phone = %s) ORDER BY id",
                 (sender_phone, receiver_phone, receiver_phone, sender_phone)
             )
             messages = cur.fetchall()
-            return {"messages_status": "success", "messages": [{"sender_phone": data[0], "receiver_phone": data[1], "content": data[2]} for data in messages]}
+            return {"messages_status": "success", "messages": [{"sender_phone": data[0], "receiver_phone": data[1], "content": data[2], "timestamp": data[3].isoformat()} for data in messages]}
     except:
         return {"messages_status": "error", "reason": "Database error"}
 
