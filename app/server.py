@@ -47,6 +47,7 @@ async def handle_message(websocket, json_msg):
         )
         if res["register_status"] == "success":
             print(f"Mensagem de {sender_phone} para {receiver_phone} registrada com sucesso!")
+            #Se o receiver estiver online, envia a mensagem diretamente para ele
             if receiver_phone in connected_clients:
                 await connected_clients[receiver_phone].send(json.dumps({
                     "type": "NEW_MESSAGE",
@@ -57,6 +58,7 @@ async def handle_message(websocket, json_msg):
                     "message_id": res.get("message_id"),
                 }))
                 await connected_clients[sender_phone].send(json.dumps({"type": "STATUS_UPDATE", "status": "sent", "message_id": res.get("message_id")}))
+            #Se o receiver não estiver online, entende-se que está iniciando um chat
             else:
                 await websocket.send(json.dumps(res))
 
@@ -69,6 +71,7 @@ async def handle_message(websocket, json_msg):
         if res["contacts_status"] == "success":
             print(f"Lista de contatos de {phone} resgatada com sucesso!")
         await websocket.send(json.dumps(res))
+
     elif message_type == "MESSAGE_HISTORY":
         phone1 = json_msg.get("phone")
         phone2 = json_msg.get("selected_contact")
@@ -81,6 +84,7 @@ async def handle_message(websocket, json_msg):
             print(f"Histórico de mensagens entre {phone1} e {phone2} resgatado com sucesso!")
         await websocket.send(json.dumps(res))
 
+#Lê a mensagem e envia confirmação de leitura para o sender
     elif message_type == "READ_MESSAGE":
         message_id = json_msg.get("message_id")
         sender_phone =json_msg.get("sender_phone")
@@ -107,7 +111,7 @@ async def main():
                          os.environ.get("SERVER_PORT"),
                          ping_interval=60,
                          ping_timeout=120,
-                         close_timeout=10
+                         close_timeout=60
                          ) as server:
             print("Servidor Online")
             await server.serve_forever()
