@@ -35,6 +35,20 @@ async def handle_message(websocket, json_msg):
             print(f"Usuário {id} logado com sucesso!")
         await websocket.send(json.dumps(res))
 
+    elif message_type == "START_CHAT":
+        sender_phone= json_msg.get("sender_phone")
+        receiver_phone = json_msg.get("receiver_phone")
+        content = json_msg.get("content")
+        res = await asyncio.to_thread(
+            repository.register_message,
+            sender_phone=sender_phone,
+            receiver_phone=receiver_phone,
+            content=content
+        )
+        if res["register_status"] == "success":
+            print(f"Mensagem de {sender_phone} para {receiver_phone} registrada com sucesso!")
+        await websocket.send(json.dumps(res))
+
     elif message_type == "CHAT":
         sender_phone= json_msg.get("sender_phone")
         receiver_phone = json_msg.get("receiver_phone")

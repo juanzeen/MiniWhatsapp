@@ -176,7 +176,7 @@ async def main():
                                     # assim iniciando um novo histórico
                                     try:
                                         await websocket.send(json.dumps({
-                                            "type": "CHAT",
+                                            "type": "SART_TCHAT",
                                             "sender_phone": phone,
                                             "receiver_phone": new_contact,
                                             "content": message
@@ -185,7 +185,7 @@ async def main():
                                         response = await websocket.recv()
                                         data = json.loads(response)
 
-                                        if data["message_status"] == "sent":
+                                        if data["message_status"] == "sent" and data["register_status"] == "success":
                                             print("Contato adicionado!\n")
                                         else:
                                             print("Erro ao adicionar novo contato! Tente novamente.")
