@@ -3,6 +3,142 @@ from websockets.asyncio.client import connect
 import json
 from utils import URI, phone_check, name_check, nickname_check, password_check
 
+async def receive_messages(websocket, stop_event, contacts, selected_conversation, contact_phone):
+    while not stop_event.is_set():
+        try:
+            response = await asyncio.wait_for(websocket.recv(), timeout=0.5)
+            data = json.loads(response)
+
+            if data["type"] == "NEW_MESSAGE" and data["sender_phone"] == contact_phone:
+                await websocket.send(json.dumps({
+                    "type": "READ_MESSAGE",
+                    "message_id": data["message_id"],
+                    "sender_phone": data["sender_phone"],
+                    "receiver_phone": data["receiver_phone"]
+                }))
+                print(f"\n{contacts[selected_conversation]["name"]} [{data['timestamp']}]: {data['content']}")
+                print("Você: ", end="", flush=True)
+
+            elif data["type"] == "STATUS_UPDATE":
+                status_icon = {"sent": "✓", "delivered": "✓✓", "read": "✓✓🟢"}
+                print(f"[{status_icon.get(data['status'], '?')}]")
+                print("Você: ", end="", flush=True)
+
+        except asyncio.TimeoutError:
+            continue
+        except Exception as e :
+            print(f"Erro ao receber mensagem: {e}")
+            break
+
+async def send_messages(websocket, stop_event, phone, contact_phone):
+    loop = asyncio.get_event_loop()
+    while not stop_event.is_set():
+        print("Você: ", end="", flush=True)
+        text = await loop.run_in_executor(None, input, "")
+
+        if text.strip() == "/sair":
+            stop_event.set()
+            break
+
+        if not text.strip():
+            continue
+
+        await websocket.send(json.dumps({
+            "type": "CHAT",
+            "sender_phone": phone,
+            "receiver_phone": contact_phone,
+            "content": text
+        }))
+
+async def login_menu(websocket, phone):
+    while True:
+        home_options = input("1-Contatos\n2-Adicionar novo contato\n3-Logout\n:")
+        if home_options == "1":
+            await websocket.send(json.dumps({
+                "type": "CONTACTS_LIST",
+                "phone": phone
+            }))
+
+            response = await websocket.recv()
+            data = json.loads(response)
+            contacts = data["contacts"]
+
+            if not contacts:
+                print("Você não possui contatos salvos. Adicione um novo contato para iniciar uma conversa.\n")
+                continue
+            else:
+                for i, ctt in enumerate(contacts):
+                    print(f"{i+1} - {ctt["name"]} ({ctt["phone"]})\n\n")
+
+                selected_conversation = int(input("Selecione o contato da conversa: ")) - 1
+                contact_phone = contacts[selected_conversation]["phone"]
+
+                await websocket.send(json.dumps({
+                    "type": "MESSAGE_HISTORY",
+                    "phone": phone,
+                    "selected_contact": contact_phone
+                }))
+
+                response = await websocket.recv()
+                data = json.loads(response)
+
+                history = data.get("messages", [])
+                for msg in history:
+                    if msg["sender_phone"] == phone:
+                        print(f"Você [{msg['timestamp']}]: {msg['content']}")
+                    else:
+                        print(f"{contacts[selected_conversation]["name"]} [{msg['timestamp']}]: {msg['content']}")
+
+                print("\n--- Conversa iniciada (/sair para voltar) ---\n")
+
+                stop_event = asyncio.Event()
+
+                await asyncio.gather(
+                    receive_messages(
+                        websocket, stop_event, contacts,
+                        selected_conversation, contact_phone
+                    ),
+                    send_messages(
+                        websocket, stop_event,
+                        phone, contact_phone
+                    )
+                )
+
+
+        elif home_options == "2":
+            new_contact = input("Digite o número do seu novo contato: ")
+            if new_contact == phone:
+                print("O número do seu novo contato não pode ser igual ao seu número.\n")
+                continue
+            message = input(f"\nNovo contato: {new_contact}\nDigite a primeira mensagem: ")
+            # só poderá adicionar um novo contato se mandar uma mensagem,
+            # assim iniciando um novo histórico
+            try:
+                await websocket.send(json.dumps({
+                    "type": "CHAT",
+                    "sender_phone": phone,
+                    "receiver_phone": new_contact,
+                    "content": message
+                }))
+
+                response = await websocket.recv()
+                data = json.loads(response)
+
+                if data["message_status"] == "sent":
+                    print("Contato adicionado!\n")
+                else:
+                    print("Erro ao adicionar novo contato! Tente novamente.")
+
+            except Exception as e:
+                print(f"Erro ao enviar mensagem ao novo contato: {e}")
+
+        elif home_options == "3":
+            print("Efetuando Logout...\n")
+            break
+        else:
+            print("Digite uma opção correta!\n")
+
+
 async def main():
     try:
         async with connect(URI) as websocket:
@@ -29,6 +165,7 @@ async def main():
                         password = input("Digite sua senha: ")
                         if password_check(password):
                             break
+
                     try:
                         print("Realizando cadastro...")
                         await websocket.send(json.dumps({
@@ -74,130 +211,7 @@ async def main():
 
                         if data["login_status"] == "success":
                             print("Login efetuado com sucesso!\n")
-                            while True:
-                                home_options = input("1-Contatos\n2-Adicionar novo contato\n3-Logout\n:")
-                                if home_options == "1":
-                                    await websocket.send(json.dumps({
-                                        "type": "CONTACTS_LIST",
-                                        "phone": phone
-                                    }))
-
-                                    response = await websocket.recv()
-                                    data = json.loads(response)
-                                    contacts = data["contacts"]
-
-                                    if not contacts:
-                                        print("Você não possui contatos salvos. Adicione um novo contato para iniciar uma conversa.\n")
-                                        continue
-                                    else:
-                                        for i, ctt in enumerate(contacts):
-                                            print(f"{i+1} - {ctt["name"]} ({ctt["phone"]})\n\n")
-
-                                        selected_conversation = int(input("Selecione o contato da conversa: ")) - 1
-                                        contact_phone = contacts[selected_conversation]["phone"]
-
-                                        await websocket.send(json.dumps({
-                                            "type": "MESSAGE_HISTORY",
-                                            "phone": phone,
-                                            "selected_contact": contact_phone
-                                        }))
-
-                                        response = await websocket.recv()
-                                        data = json.loads(response)
-
-                                        history = data.get("messages", [])
-                                        for msg in history:
-                                            if msg["sender_phone"] == phone:
-                                                print(f"Você [{msg['timestamp']}]: {msg['content']}")
-                                            else:
-                                                print(f"{contacts[selected_conversation]["name"]} [{msg['timestamp']}]: {msg['content']}")
-
-                                        print("\n--- Conversa iniciada (/sair para voltar) ---\n")
-
-                                        stop_event = asyncio.Event()
-
-                                        async def receive_messages():
-                                            while not stop_event.is_set():
-                                                try:
-                                                    response = await asyncio.wait_for(websocket.recv(), timeout=0.5)
-                                                    data = json.loads(response)
-
-                                                    if data["type"] == "NEW_MESSAGE" and data["sender_phone"] == contact_phone:
-                                                        await websocket.send(json.dumps({
-                                                            "type": "READ_MESSAGE",
-                                                            "message_id": data["message_id"],
-                                                            "sender_phone": data["sender_phone"],
-                                                            "receiver_phone": data["receiver_phone"]
-                                                        }))
-                                                        print(f"\n{contacts[selected_conversation]["name"]} [{data['timestamp']}]: {data['content']}")
-                                                        print("Você: ", end="", flush=True)
-
-                                                    elif data["type"] == "STATUS_UPDATE":
-                                                        status_icon = {"sent": "✓", "delivered": "✓✓", "read": "✓✓🟢"}
-                                                        print(f"[{status_icon.get(data['status'], '?')}]")
-                                                        print("Você: ", end="", flush=True)
-
-                                                except asyncio.TimeoutError:
-                                                    continue
-                                                except Exception as e :
-                                                    print(f"Erro ao receber mensagem: {e}")
-                                                    break
-
-                                        async def send_messages():
-                                            loop = asyncio.get_event_loop()
-                                            while not stop_event.is_set():
-                                                print("Você: ", end="", flush=True)
-                                                text = await loop.run_in_executor(None, input, "")
-
-                                                if text.strip() == "/sair":
-                                                    stop_event.set()
-                                                    break
-
-                                                if not text.strip():
-                                                    continue
-
-                                                await websocket.send(json.dumps({
-                                                    "type": "CHAT",
-                                                    "sender_phone": phone,
-                                                    "receiver_phone": contact_phone,
-                                                    "content": text
-                                                }))
-
-                                        await asyncio.gather(receive_messages(), send_messages())
-
-
-                                elif home_options == "2":
-                                    new_contact = input("Digite o número do seu novo contato: ")
-                                    if new_contact == phone:
-                                        print("O número do seu novo contato não pode ser igual ao seu número.\n")
-                                        continue
-                                    message = input(f"\nNovo contato: {new_contact}\nDigite a primeira mensagem: ")
-                                    # só poderá adicionar um novo contato se mandar uma mensagem,
-                                    # assim iniciando um novo histórico
-                                    try:
-                                        await websocket.send(json.dumps({
-                                            "type": "SART_TCHAT",
-                                            "sender_phone": phone,
-                                            "receiver_phone": new_contact,
-                                            "content": message
-                                        }))
-
-                                        response = await websocket.recv()
-                                        data = json.loads(response)
-
-                                        if data["message_status"] == "sent" and data["register_status"] == "success":
-                                            print("Contato adicionado!\n")
-                                        else:
-                                            print("Erro ao adicionar novo contato! Tente novamente.")
-
-                                    except Exception as e:
-                                        print(f"Erro ao enviar mensagem ao novo contato: {e}")
-
-                                elif home_options == "3":
-                                    print("Efetuando Logout...\n")
-                                    break
-                                else:
-                                    print("Digite uma opção correta!\n")
+                            await login_menu(websocket, phone)
 
                         elif data["login_status"] == "error":
                             print(f"Erro ao realizar o login!\nMotivo do erro: {data["reason"]}\nTente novamente.\n")
