@@ -84,18 +84,17 @@ async def main():
 
                                     response = await websocket.recv()
                                     data = json.loads(response)
+                                    contacts = data["contacts"]
 
-                                    if not data["contact_numbers"]:
+                                    if not contacts:
                                         print("Você não possui contatos salvos. Adicione um novo contato para iniciar uma conversa.\n")
                                         continue
                                     else:
-                                        contact_names = data["contact_names"]
-                                        contact_numbers = data["contact_numbers"]
-                                        for i, contact_number in enumerate(contact_numbers):
-                                            print(f"{i}- {contact_names[i]} ({contact_number})\n\n")
-                                        
-                                        selected_conversation = int(input("Selecione o contato da conversa: "))
-                                        contact_phone = contact_numbers[selected_conversation]
+                                        for i, ctt in enumerate(contacts):
+                                            print(f"{i+1} - {ctt["name"]} ({ctt["phone"]})\n\n")
+
+                                        selected_conversation = int(input("Selecione o contato da conversa: ")) - 1
+                                        contact_phone = contacts[selected_conversation]["phone"]
 
                                         await websocket.send(json.dumps({
                                             "type": "MESSAGE_HISTORY",
@@ -108,10 +107,10 @@ async def main():
 
                                         history = data.get("messages", [])
                                         for msg in history:
-                                            if msg["sender"] == phone:
+                                            if msg["sender_phone"] == phone:
                                                 print(f"Você [{msg['timestamp']}]: {msg['content']}")
                                             else:
-                                                print(f"Contato [{msg['timestamp']}]: {msg['content']}")
+                                                print(f"{contacts[selected_conversation]["name"]} [{msg['timestamp']}]: {msg['content']}")
 
                                         print("\n--- Conversa iniciada (/sair para voltar) ---\n")
 
@@ -126,19 +125,22 @@ async def main():
                                                     if data["type"] == "NEW_MESSAGE" and data["sender_phone"] == contact_phone:
                                                         await websocket.send(json.dumps({
                                                             "type": "READ_MESSAGE",
-                                                            "msg_id": data["msg_id"]
+                                                            "message_id": data["message_id"],
+                                                            "sender_phone": data["sender_phone"],
+                                                            "receiver_phone": data["receiver_phone"]
                                                         }))
-                                                        print(f"\n{contact_names[selected_conversation]} [{data['timestamp']}]: {data['content']}")
+                                                        print(f"\n{contacts[selected_conversation]["name"]} [{data['timestamp']}]: {data['content']}")
                                                         print("Você: ", end="", flush=True)
 
                                                     elif data["type"] == "STATUS_UPDATE":
                                                         status_icon = {"sent": "✓", "delivered": "✓✓", "read": "✓✓🟢"}
-                                                        print(f"\n  [{status_icon.get(data['status'], '?')}]")
+                                                        print(f"[{status_icon.get(data['status'], '?')}]")
                                                         print("Você: ", end="", flush=True)
 
                                                 except asyncio.TimeoutError:
                                                     continue
-                                                except Exception:
+                                                except Exception as e :
+                                                    print(f"Erro ao receber mensagem: {e}")
                                                     break
 
                                         async def send_messages():
