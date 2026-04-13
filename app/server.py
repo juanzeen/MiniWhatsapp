@@ -45,10 +45,20 @@ async def handle_message(websocket, json_msg):
             receiver_phone=receiver_phone,
             content=content
         )
-        print(res)
         if res["register_status"] == "success":
             print(f"Mensagem de {sender_phone} para {receiver_phone} registrada com sucesso!")
-        await websocket.send(json.dumps(res))
+            if receiver_phone in connected_clients:
+                await connected_clients[receiver_phone].send(json.dumps({
+                    "type": "NEW_MESSAGE",
+                    "sender_phone": sender_phone,
+                    "receiver_phone": receiver_phone,
+                    "content": content,
+                    "timestamp": res.get("timestamp"),
+                    "message_id": res.get("message_id"),
+                }))
+                await connected_clients[sender_phone].send(json.dumps({"type": "STATUS_UPDATE", "status": "sent", "message_id": res.get("message_id")}))
+            else:
+                await websocket.send(json.dumps(res))
 
     elif message_type == "CONTACTS_LIST":
         phone= json_msg.get("phone")
@@ -57,7 +67,7 @@ async def handle_message(websocket, json_msg):
             phone=phone
         )
         if res["contacts_status"] == "success":
-            print(f"Lista de contatos de {phone} resgatada com sucesso!\n {list(res['contacts'])}")
+            print(f"Lista de contatos de {phone} resgatada com sucesso!")
         await websocket.send(json.dumps(res))
     elif message_type == "MESSAGE_HISTORY":
         phone1 = json_msg.get("phone")
@@ -68,8 +78,20 @@ async def handle_message(websocket, json_msg):
             receiver_phone=phone2
         )
         if res["messages_status"] == "success":
-            print(f"Histórico de mensagens entre {phone1} e {phone2} resgatado com sucesso!\n {list(res['messages'])}")
+            print(f"Histórico de mensagens entre {phone1} e {phone2} resgatado com sucesso!")
         await websocket.send(json.dumps(res))
+
+    elif message_type == "READ_MESSAGE":
+        message_id = json_msg.get("message_id")
+        sender_phone =json_msg.get("sender_phone")
+        res = await asyncio.to_thread(
+            repository.update_message_status,
+            message_id=message_id,
+            new_status="read"
+        )
+        if res["update_status"] == "success":
+            print(f"Status da mensagem {message_id} atualizado para 'read' com sucesso!")
+        await connected_clients[sender_phone].send(json.dumps({"type": "STATUS_UPDATE", "status": "read", "message_id": message_id}))
 
 #Handler para lidar com as mensagens recebidas dos clientes, roda o tempo todo no WS
 async def handler(websocket):
@@ -83,8 +105,8 @@ async def main():
         async with serve(handler,
                          os.environ.get("SERVER_HOST"),
                          os.environ.get("SERVER_PORT"),
-                         ping_interval=30,
-                         ping_timeout=60,
+                         ping_interval=60,
+                         ping_timeout=120,
                          close_timeout=10
                          ) as server:
             print("Servidor Online")

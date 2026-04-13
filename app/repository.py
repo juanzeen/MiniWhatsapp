@@ -70,11 +70,15 @@ def register_message(*, sender_phone, receiver_phone, content):
             if not cur.fetchone():
                 return {"register_status": "error", "reason": "Receiver phone number not registered"}
             cur.execute(
-                "INSERT INTO messages (sender_phone, receiver_phone, content) VALUES (%s, %s, %s)",
+                """INSERT INTO messages (sender_phone, receiver_phone, content)
+                VALUES (%s, %s, %s)
+                RETURNING id, timestamp, status
+                """,
                 (sender_phone, receiver_phone, content)
             )
+            row = cur.fetchone()
             conn.commit()
-            return {"register_status": "success", "message_status": "sent"}
+            return {"register_status": "success", "message_id": row[0], "timestamp": row[1].isoformat(), "message_status": row[2]}
     except Exception as e:
         return {"register_status": "error", "reason": f"{e}"}
 
@@ -92,6 +96,20 @@ def get_messages(*, sender_phone, receiver_phone):
             return {"messages_status": "success", "messages": [{"sender_phone": data[0], "receiver_phone": data[1], "content": data[2], "timestamp": data[3].isoformat()} for data in messages]}
     except:
         return {"messages_status": "error", "reason": "Database error"}
+
+def update_message_status(*, message_id, new_status):
+    conn = get_db_connection()
+    if conn is None:
+        return {"update_status": "error", "reason": "Database connection failed"}
+    try:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE messages SET status = %s WHERE id = %s", (new_status, message_id))
+            if cur.rowcount == 0:
+                return {"update_status": "error", "reason": "Message ID not found"}
+            conn.commit()
+            return {"update_status": "success", "status": new_status}
+    except Exception as e:
+        return {"update_status": "error", "reason": f"{e}"}
 
 def get_contacts(*, phone):
     conn = get_db_connection()
