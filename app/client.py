@@ -3,51 +3,54 @@ from websockets.asyncio.client import connect
 import json
 from utils import URI, phone_check, name_check, nickname_check, password_check
 
-async def receive_messages(websocket, stop_event, contacts, selected_conversation, contact_phone):
-    while not stop_event.is_set():
+async def receive_messages(websocket):
+    global active_chat
+
+    while True:
         try:
             response = await asyncio.wait_for(websocket.recv(), timeout=0.5)
             data = json.loads(response)
 
-            if data["type"] == "NEW_MESSAGE" and data["sender_phone"] == contact_phone:
-                await websocket.send(json.dumps({
-                    "type": "PROCESS_MESSAGE",
-                    "message_id": data["message_id"],
-                    "sender_phone": data["sender_phone"],
-                    "receiver_phone": data["receiver_phone"],
-                    "new_status": "read"
-                }))
-                print(f"\n{contacts[selected_conversation]["name"]} [{data['timestamp']}]: {data['content']}")
-                print("Você: ", end="", flush=True)
+            if data["type"] == "NEW_MESSAGE":
+                sender = data["sender_phone"]
+                if sender == active_chat:
+                    await websocket.send(json.dumps({
+                        "type": "PROCESS_MESSAGE",
+                        "message_id": data["message_id"],
+                        "sender_phone": data["sender_phone"],
+                        "receiver_phone": data["receiver_phone"],
+                        "new_status": "read"
+                    }))
+                    print(f"\n{sender} [{data['timestamp']}]: {data['content']}")
+                else:
+                    await websocket.send(json.dumps({
+                        "type": "PROCESS_MESSAGE",
+                        "message_id": data["message_id"],
+                        "sender_phone": data["sender_phone"],
+                        "receiver_phone": data["receiver_phone"],
+                        "new_status": "delivered"
+                    }))
+                    print(f"\n Nova mensagem de {sender}: {data['content']}") #se bagunçar no chat, tirar isso
 
-            if data["type"] == "NEW_MESSAGE" and data["sender_phone"] != contact_phone:
-                await websocket.send(json.dumps({
-                    "type": "PROCESS_MESSAGE",
-                    "message_id": data["message_id"],
-                    "sender_phone": data["sender_phone"],
-                    "receiver_phone": data["receiver_phone"],
-                    "new_status": "delivered"
-                }))
+            print("Você: ", end="", flush=True)
 
-            elif data["type"] == "STATUS_UPDATE":
-                status_icon = {"sent": "✓", "delivered": "✓✓", "read": "✓✓🟢"}
-                print(f"[{status_icon.get(data['status'], '?')}]")
-                print("Você: ", end="", flush=True)
-
-        except asyncio.TimeoutError:
-            continue
         except Exception as e :
             print(f"Erro ao receber mensagem: {e}")
             break
 
-async def send_messages(websocket, stop_event, phone, contact_phone):
+async def send_messages(websocket, phone, contact_phone):
+    global active_chat
+    active_chat = contact_phone
+
     loop = asyncio.get_event_loop()
-    while not stop_event.is_set():
+
+    print("\n--- Conversa iniciada (/sair para voltar) ---\n")
+    while True:
         print("Você: ", end="", flush=True)
         text = await loop.run_in_executor(None, input, "")
 
         if text.strip() == "/sair":
-            stop_event.set()
+            active_chat = None
             break
 
         if not text.strip():
@@ -61,6 +64,11 @@ async def send_messages(websocket, stop_event, phone, contact_phone):
         }))
 
 async def login_menu(websocket, phone):
+    global active_chat
+    active_chat = None
+
+    asyncio.create_task(receive_messages(websocket))
+
     while True:
         home_options = input("1-Contatos\n2-Adicionar novo contato\n3-Logout\n:")
         if home_options == "1":
@@ -68,7 +76,6 @@ async def login_menu(websocket, phone):
                 "type": "CONTACTS_LIST",
                 "phone": phone
             }))
-
             response = await websocket.recv()
             data = json.loads(response)
             contacts = data["contacts"]
@@ -76,6 +83,7 @@ async def login_menu(websocket, phone):
             if not contacts:
                 print("Você não possui contatos salvos. Adicione um novo contato para iniciar uma conversa.\n")
                 continue
+
             else:
                 for i, ctt in enumerate(contacts):
                     print(f"{i+1} - {ctt["name"]} ({ctt["phone"]})\n\n")
@@ -99,21 +107,7 @@ async def login_menu(websocket, phone):
                     else:
                         print(f"{contacts[selected_conversation]["name"]} [{msg['timestamp']}]: {msg['content']}")
 
-                print("\n--- Conversa iniciada (/sair para voltar) ---\n")
-
-                stop_event = asyncio.Event()
-
-                await asyncio.gather(
-                    receive_messages(
-                        websocket, stop_event, contacts,
-                        selected_conversation, contact_phone
-                    ),
-                    send_messages(
-                        websocket, stop_event,
-                        phone, contact_phone
-                    )
-                )
-
+                await send_messages(websocket, phone, contact_phone)
 
         elif home_options == "2":
             new_contact = input("Digite o número do seu novo contato: ")
