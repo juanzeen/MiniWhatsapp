@@ -11,13 +11,23 @@ async def receive_messages(websocket, stop_event, contacts, selected_conversatio
 
             if data["type"] == "NEW_MESSAGE" and data["sender_phone"] == contact_phone:
                 await websocket.send(json.dumps({
-                    "type": "READ_MESSAGE",
+                    "type": "PROCESS_MESSAGE",
                     "message_id": data["message_id"],
                     "sender_phone": data["sender_phone"],
-                    "receiver_phone": data["receiver_phone"]
+                    "receiver_phone": data["receiver_phone"],
+                    "new_status": "read"
                 }))
                 print(f"\n{contacts[selected_conversation]["name"]} [{data['timestamp']}]: {data['content']}")
                 print("Você: ", end="", flush=True)
+
+            if data["type"] == "NEW_MESSAGE" and data["sender_phone"] != contact_phone:
+                await websocket.send(json.dumps({
+                    "type": "PROCESS_MESSAGE",
+                    "message_id": data["message_id"],
+                    "sender_phone": data["sender_phone"],
+                    "receiver_phone": data["receiver_phone"],
+                    "new_status": "delivered"
+                }))
 
             elif data["type"] == "STATUS_UPDATE":
                 status_icon = {"sent": "✓", "delivered": "✓✓", "read": "✓✓🟢"}
@@ -95,11 +105,11 @@ async def login_menu(websocket, phone):
 
                 await asyncio.gather(
                     receive_messages(
-                        websocket, stop_event, contacts, 
+                        websocket, stop_event, contacts,
                         selected_conversation, contact_phone
-                    ), 
+                    ),
                     send_messages(
-                        websocket, stop_event, 
+                        websocket, stop_event,
                         phone, contact_phone
                     )
                 )
@@ -115,7 +125,7 @@ async def login_menu(websocket, phone):
             # assim iniciando um novo histórico
             try:
                 await websocket.send(json.dumps({
-                    "type": "CHAT",
+                    "type": "START_CHAT",
                     "sender_phone": phone,
                     "receiver_phone": new_contact,
                     "content": message
