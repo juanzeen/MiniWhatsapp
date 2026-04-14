@@ -71,10 +71,7 @@ async def handle_message(websocket, json_msg):
                     "timestamp": res.get("timestamp"),
                     "message_id": res.get("message_id"),
                 }))
-                await connected_clients[sender_phone].send(json.dumps({"type": "STATUS_UPDATE", "status": "sent", "message_id": res.get("message_id")}))
-            #Se o receiver não estiver online, entende-se que está iniciando um chat
-            else:
-                await websocket.send(json.dumps(res))
+            await connected_clients[sender_phone].send(json.dumps({"type": "STATUS_UPDATE", "status": "sent", "message_id": res.get("message_id")}))
 
     elif message_type == "CONTACTS_LIST":
         phone= json_msg.get("phone")
@@ -99,17 +96,19 @@ async def handle_message(websocket, json_msg):
         await websocket.send(json.dumps(res))
 
 #Lê a mensagem e envia confirmação de leitura para o sender
-    elif message_type == "READ_MESSAGE":
+    elif message_type == "PROCESS_MESSAGE":
         message_id = json_msg.get("message_id")
         sender_phone =json_msg.get("sender_phone")
+        new_status = json_msg.get("new_status")
         res = await asyncio.to_thread(
             repository.update_message_status,
             message_id=message_id,
-            new_status="read"
+            new_status=new_status
         )
         if res["update_status"] == "success":
-            print(f"Status da mensagem {message_id} atualizado para 'read' com sucesso!")
-        await connected_clients[sender_phone].send(json.dumps({"type": "STATUS_UPDATE", "status": "read", "message_id": message_id}))
+            print(f"Status da mensagem {message_id} atualizado para '{new_status}' com sucesso!")
+        await connected_clients[sender_phone].send(json.dumps({"type": "STATUS_UPDATE", "status": new_status, "message_id": message_id}))
+
 
 #Handler para lidar com as mensagens recebidas dos clientes, roda o tempo todo no WS
 async def handler(websocket):
