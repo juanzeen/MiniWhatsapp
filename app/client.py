@@ -1,7 +1,8 @@
 import asyncio
 from websockets.asyncio.client import connect
 import json
-from utils import URI, phone_check, name_check, nickname_check, password_check
+from utils import URI, phone_check, name_check, nickname_check, password_check, format_date
+from datetime import datetime
 
 async def receive_messages(websocket):
     global active_chat
@@ -21,7 +22,7 @@ async def receive_messages(websocket):
                         "receiver_phone": data["receiver_phone"],
                         "new_status": "read"
                     }))
-                    print(f"\n{sender} [{data['timestamp']}]: {data['content']}")
+                    print(f"\n{sender} [{format_date(data['timestamp'])}]: {data['content']}")
                 else:
                     await websocket.send(json.dumps({
                         "type": "PROCESS_MESSAGE",
@@ -103,9 +104,9 @@ async def login_menu(websocket, phone):
                 history = data.get("messages", [])
                 for msg in history:
                     if msg["sender_phone"] == phone:
-                        print(f"Você [{msg['timestamp']}]: {msg['content']}")
+                        print(f"Você [{format_date(msg['timestamp'])}]: {msg['content']}")
                     else:
-                        print(f"{contacts[selected_conversation]["name"]} [{msg['timestamp']}]: {msg['content']}")
+                        print(f"{contacts[selected_conversation]["name"]} [{format_date(msg['timestamp'])}]: {msg['content']}")
 
                 await send_messages(websocket, phone, contact_phone)
 
