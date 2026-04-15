@@ -1,17 +1,23 @@
 import asyncio
+import uuid
 from websockets.asyncio.client import connect
 import json
 from utils import URI, phone_check, name_check, nickname_check, password_check
 
-async def receive_messages(websocket):
-    global active_chat
+pending_requests = {}
 
+async def receiver(websocket):
+    global active_chat
     while True:
         try:
-            response = await asyncio.wait_for(websocket.recv(), timeout=0.5)
+            response = await websocket.recv()
             data = json.loads(response)
+            req_id = data.get("request_id")
 
-            if data["type"] == "NEW_MESSAGE":
+            if req_id and req_id in pending_requests:
+                pending_requests[req_id].set_result(data)
+
+            elif data["type"] == "NEW_MESSAGE":
                 sender = data["sender_phone"]
                 if sender == active_chat:
                     await websocket.send(json.dumps({
@@ -30,9 +36,11 @@ async def receive_messages(websocket):
                         "receiver_phone": data["receiver_phone"],
                         "new_status": "delivered"
                     }))
-                    print(f"\n Nova mensagem de {sender}: {data['content']}") #se bagunçar no chat, tirar isso
 
-            print("Você: ", end="", flush=True)
+            elif data["type"] == "STATUS_UPDATE":
+                status_icon = {"sent": "✓", "delivered": "✓✓", "read": "✓✓🟢"}
+                print(f"\n[{status_icon.get(data['status'], '?')}]")
+
 
         except Exception as e :
             print(f"Erro ao receber mensagem: {e}")
@@ -43,7 +51,6 @@ async def send_messages(websocket, phone, contact_phone):
     active_chat = contact_phone
 
     loop = asyncio.get_event_loop()
-
     print("\n--- Conversa iniciada (/sair para voltar) ---\n")
     while True:
         print("Você: ", end="", flush=True)
@@ -56,28 +63,48 @@ async def send_messages(websocket, phone, contact_phone):
         if not text.strip():
             continue
 
+        future = loop.create_future()
+        req_id = str(uuid.uuid4())
+        pending_requests[req_id] = future
+
         await websocket.send(json.dumps({
             "type": "CHAT",
             "sender_phone": phone,
+            "request_id": req_id,
             "receiver_phone": contact_phone,
             "content": text
         }))
+
+        await future
+        pending_requests.pop(req_id, None)
 
 async def login_menu(websocket, phone):
     global active_chat
     active_chat = None
 
-    asyncio.create_task(receive_messages(websocket))
+    receiver_task = asyncio.create_task(receiver(websocket))
+    loop = asyncio.get_event_loop()
+    await asyncio.sleep(0.1)
 
     while True:
-        home_options = input("1-Contatos\n2-Adicionar novo contato\n3-Logout\n:")
+        home_options = await loop.run_in_executor(None, input, "1-Contatos\n2-Adicionar novo contato\n3-Logout\n:")
         if home_options == "1":
+            req_id = str(uuid.uuid4())
+            future = asyncio.get_event_loop().create_future()
+            pending_requests[req_id] = future
             await websocket.send(json.dumps({
                 "type": "CONTACTS_LIST",
+                "request_id": req_id,
                 "phone": phone
             }))
-            response = await websocket.recv()
-            data = json.loads(response)
+            try:
+                data = await asyncio.wait_for(future, timeout=5)
+            except asyncio.TimeoutError:
+                pending_requests.pop(req_id, None)
+                print("Timeout ao obter lista de contatos. Tente novamente.")
+            finally:
+                pending_requests.pop(req_id, None)
+
             contacts = data["contacts"]
 
             if not contacts:
@@ -86,47 +113,68 @@ async def login_menu(websocket, phone):
 
             else:
                 for i, ctt in enumerate(contacts):
-                    print(f"{i+1} - {ctt["name"]} ({ctt["phone"]})\n\n")
+                    print(f"{i+1} - {ctt['name']} ({ctt['phone']})\n\n")
 
-                selected_conversation = int(input("Selecione o contato da conversa: ")) - 1
+                selected_conversation = int(await loop.run_in_executor(None, input, "Selecione o contato da conversa: ")) - 1
                 contact_phone = contacts[selected_conversation]["phone"]
+                msg_req_id = str(uuid.uuid4())
+                msg_future = asyncio.get_event_loop().create_future()
+                pending_requests[msg_req_id] = msg_future
 
                 await websocket.send(json.dumps({
                     "type": "MESSAGE_HISTORY",
+                    "request_id": msg_req_id,
                     "phone": phone,
                     "selected_contact": contact_phone
                 }))
-
-                response = await websocket.recv()
-                data = json.loads(response)
+                try:
+                    data = await asyncio.wait_for(msg_future, timeout=5)
+                except asyncio.TimeoutError:
+                    pending_requests.pop(msg_req_id, None)
+                    print("Timeout ao obter historico de mensagem. Tente novamente.")
+                finally:
+                    pending_requests.pop(msg_req_id, None)
 
                 history = data.get("messages", [])
+                status_icon = {"sent": "✓", "delivered": "✓✓", "read": "✓✓🟢"}
                 for msg in history:
                     if msg["sender_phone"] == phone:
-                        print(f"Você [{msg['timestamp']}]: {msg['content']}")
+                        txt = f"Você [{msg['timestamp']}]: {msg['content']}"
+                        print(f"{txt[:150]:<{150}}  {status_icon[msg['status']]}")
                     else:
-                        print(f"{contacts[selected_conversation]["name"]} [{msg['timestamp']}]: {msg['content']}")
+                        txt = f"{contacts[selected_conversation]['name']} [{msg['timestamp']}]: {msg['content']}"
+                        print(f"{txt[:150]:<150}")
 
                 await send_messages(websocket, phone, contact_phone)
 
         elif home_options == "2":
-            new_contact = input("Digite o número do seu novo contato: ")
+            new_contact = await loop.run_in_executor(None, input, "Digite o número do seu novo contato: ")
             if new_contact == phone:
                 print("O número do seu novo contato não pode ser igual ao seu número.\n")
                 continue
-            message = input(f"\nNovo contato: {new_contact}\nDigite a primeira mensagem: ")
+            message = await loop.run_in_executor(None, input, f"\nNovo contato: {new_contact}\nDigite a primeira mensagem: ")
             # só poderá adicionar um novo contato se mandar uma mensagem,
             # assim iniciando um novo histórico
             try:
+                req_id = str(uuid.uuid4())
+                future = asyncio.get_event_loop().create_future()
+                pending_requests[req_id] = future
                 await websocket.send(json.dumps({
                     "type": "START_CHAT",
+                    "request_id": req_id,
                     "sender_phone": phone,
                     "receiver_phone": new_contact,
                     "content": message
                 }))
 
-                response = await websocket.recv()
-                data = json.loads(response)
+
+                try:
+                    data = await asyncio.wait_for(future, timeout=5)
+                except asyncio.TimeoutError:
+                    pending_requests.pop(req_id, None)
+                    print("Timeout ao começar uma conversa. Tente novamente.")
+                finally:
+                    pending_requests.pop(req_id, None)
 
                 if data["message_status"] == "sent":
                     print("Contato adicionado!\n")
@@ -138,6 +186,30 @@ async def login_menu(websocket, phone):
 
         elif home_options == "3":
             print("Efetuando Logout...\n")
+            req_id = str(uuid.uuid4())
+            future = asyncio.get_event_loop().create_future()
+            pending_requests[req_id] = future
+            await websocket.send(json.dumps({
+                "type": "LOGOUT",
+                "phone": phone,
+                "request_id": req_id
+            }))
+            try:
+                data = await asyncio.wait_for(future, timeout=5)
+            except asyncio.TimeoutError:
+                pending_requests.pop(req_id, None)
+                print("Timeout ao fazer logout. Tente novamente.")
+            finally:
+                pending_requests.pop(req_id, None)
+            if data.get("logout_status") == "success":
+                print("Logout efetuado com sucesso!\n")
+                receiver_task.cancel()
+                try:
+                    await receiver_task
+                except asyncio.CancelledError:
+                    pass
+            else:
+                print("Erro ao realizar logout! Tente novamente.")
             break
         else:
             print("Digite uma opção correta!\n")
@@ -186,7 +258,7 @@ async def main():
                         if data["register_status"] == "success":
                             print("Cadastro criado com sucesso! Realize o Login.\n")
                         elif data["register_status"] == "error":
-                            print(f"Erro ao realizar o cadastro!\nMotivo do erro: {data["reason"]}\nTente novamente.\n")
+                            print(f"Erro ao realizar o cadastro!\nMotivo do erro: {data['reason']}\nTente novamente.\n")
 
                     except Exception as e:
                         print(f"Erro ao enviar dados de cadastro ao servidor: {e}")
@@ -218,7 +290,7 @@ async def main():
                             await login_menu(websocket, phone)
 
                         elif data["login_status"] == "error":
-                            print(f"Erro ao realizar o login!\nMotivo do erro: {data["reason"]}\nTente novamente.\n")
+                            print(f"Erro ao realizar o login!\nMotivo do erro: {data['reason']}\nTente novamente.\n")
 
                     except Exception as e:
                         print(f"Erro ao enviar dados de login ao servidor: {e}")
