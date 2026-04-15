@@ -1,3 +1,4 @@
 psycopg2-binary==2.9.11
 python-dotenv==1.2.2
 websockets==16.0
+rich==13.9.4

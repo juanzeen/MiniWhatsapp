@@ -76,14 +76,11 @@ async def handle_message(websocket, json_msg):
         msg_response = res | {"request_id": req_id}
         if res["register_status"] == "success":
             print(f"Mensagem de {sender_phone} para {receiver_phone} registrada com sucesso!")
-            print(connected_clients)
-            print(f"celular do receiver: {receiver_phone}")
             #Se o receiver estiver online, envia a mensagem diretamente para ele
             if receiver_phone in connected_clients:
                 try:
                     await connected_clients[receiver_phone].send(json.dumps({
                      "type": "NEW_MESSAGE",
-                     "sender_phone": sender_phone,
                      "receiver_phone": receiver_phone,
                      "content": content,
                      "timestamp": res.get("timestamp"),
@@ -129,7 +126,6 @@ async def handle_message(websocket, json_msg):
         message_id = json_msg.get("message_id")
         sender_phone =json_msg.get("sender_phone")
         new_status = json_msg.get("new_status")
-        print(f"DEBUG: Recebi PROCESS_MESSAGE, msg_id={message_id}, new_status={new_status}, sender={sender_phone}")
         res = await asyncio.to_thread(
             repository.update_message_status,
             message_id=message_id,

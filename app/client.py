@@ -3,7 +3,6 @@ import uuid
 from websockets.asyncio.client import connect
 import json
 from utils import URI, phone_check, name_check, nickname_check, password_check, format_date
-from datetime import datetime
 
 pending_requests = {}
 
