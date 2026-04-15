@@ -2,7 +2,8 @@ import asyncio
 import uuid
 from websockets.asyncio.client import connect
 import json
-from utils import URI, phone_check, name_check, nickname_check, password_check
+from utils import URI, phone_check, name_check, nickname_check, password_check, format_date
+from datetime import datetime
 
 pending_requests = {}
 
@@ -27,7 +28,7 @@ async def receiver(websocket):
                         "receiver_phone": data["receiver_phone"],
                         "new_status": "read"
                     }))
-                    print(f"\n{sender} [{data['timestamp']}]: {data['content']}")
+                    print(f"\n{sender} [{format_date(data['timestamp'])}]: {data['content']}")
                 else:
                     await websocket.send(json.dumps({
                         "type": "PROCESS_MESSAGE",
@@ -51,7 +52,6 @@ async def send_messages(websocket, phone, contact_phone):
     active_chat = contact_phone
 
     loop = asyncio.get_event_loop()
-    print("\n--- Conversa iniciada (/sair para voltar) ---\n")
     while True:
         print("Você: ", end="", flush=True)
         text = await loop.run_in_executor(None, input, "")
@@ -139,10 +139,10 @@ async def login_menu(websocket, phone):
                 status_icon = {"sent": "✓", "delivered": "✓✓", "read": "✓✓🟢"}
                 for msg in history:
                     if msg["sender_phone"] == phone:
-                        txt = f"Você [{msg['timestamp']}]: {msg['content']}"
+                        txt = f"Você [{format_date(msg['timestamp'])}]: {msg['content']}"
                         print(f"{txt[:150]:<{150}}  {status_icon[msg['status']]}")
                     else:
-                        txt = f"{contacts[selected_conversation]['name']} [{msg['timestamp']}]: {msg['content']}"
+                        txt = f"{contacts[selected_conversation]['name']} [{format_date(msg['timestamp'])}]: {msg['content']}"
                         print(f"{txt[:150]:<150}")
 
                 await send_messages(websocket, phone, contact_phone)

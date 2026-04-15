@@ -1,5 +1,6 @@
 import os
 from dotenv import load_dotenv
+from datetime import datetime
 
 load_dotenv()
 
@@ -44,3 +45,8 @@ def password_check(password):
     else:
         print("Senha inserida!\n")
         return True
+
+def format_date(date_str):
+    date = datetime.fromisoformat(date_str)
+    f_date = date.strftime("%d/%m/%Y %H:%M")
+    return f_date
