@@ -84,6 +84,21 @@ async def login_menu(websocket, phone):
     receiver_task = asyncio.create_task(receiver(websocket))
     loop = asyncio.get_event_loop()
     await asyncio.sleep(0.1)
+    req_id = str(uuid.uuid4())
+    future = asyncio.get_event_loop().create_future()
+    pending_requests[req_id] = future
+    await websocket.send(json.dumps({
+        "type": "UPDATE_MESSAGES_DELIVERED",
+        "request_id": req_id,
+        "receiver": phone,
+    }))
+    try:
+        data = await asyncio.wait_for(future, timeout=5)
+    except asyncio.TimeoutError:
+        pending_requests.pop(req_id, None)
+        print("Timeout ao começar uma conversa. Tente novamente.")
+    finally:
+        pending_requests.pop(req_id, None)
 
     while True:
         home_options = await loop.run_in_executor(None, input, "1-Contatos\n2-Adicionar novo contato\n3-Logout\n:")
@@ -116,6 +131,26 @@ async def login_menu(websocket, phone):
 
                 selected_conversation = int(await loop.run_in_executor(None, input, "Selecione o contato da conversa: ")) - 1
                 contact_phone = contacts[selected_conversation]["phone"]
+                #Request para atualizar mensagens entregues
+                if contact_phone:
+                    status_req_id = str(uuid.uuid4())
+                    status_future = asyncio.get_event_loop().create_future()
+                    pending_requests[status_req_id] = status_future
+                    await websocket.send(json.dumps({
+                        "type": "UPDATE_MESSAGES_READ",
+                        "request_id": status_req_id,
+                        "sender_phone": phone,
+                        "receiver_phone": contact_phone,
+                    }))
+                    try:
+                        data = await asyncio.wait_for(status_future, timeout=5)
+                    except asyncio.TimeoutError:
+                        pending_requests.pop(status_req_id, None)
+                        print("Timeout ao começar uma conversa. Tente novamente.")
+                    finally:
+                        pending_requests.pop(status_req_id, None)
+
+                #Request para o historico de mensagens
                 msg_req_id = str(uuid.uuid4())
                 msg_future = asyncio.get_event_loop().create_future()
                 pending_requests[msg_req_id] = msg_future

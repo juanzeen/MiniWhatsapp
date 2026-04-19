@@ -122,6 +122,36 @@ def update_message_status(*, message_id, new_status):
     finally:
         conn.close()
 
+def update_history_delivered_messages(*, receiver):
+    conn = get_db_connection()
+    if conn is None:
+        return {"update_status": "error", "reason": "Database connection failed"}
+    try:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE messages SET status = %s WHERE receiver_phone = %s AND status != %s", ("delivered", receiver, "delivered"))
+            updated_count = cur.rowcount
+            conn.commit()
+            return {"update_status": "success", "updated_count": updated_count}
+    except Exception as e:
+        return {"update_status": "error", "reason": f"{e}"}
+    finally:
+        conn.close()
+
+def update_history_read_messages(*, sender, receiver):
+    conn = get_db_connection()
+    if conn is None:
+        return {"update_status": "error", "reason": "Database connection failed"}
+    try:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE messages SET status = %s WHERE sender_phone = %s AND receiver_phone = %s", ("read", sender, receiver))
+            updated_count = cur.rowcount
+            conn.commit()
+            return {"update_status": "success", "updated_count": updated_count}
+    except Exception as e:
+        return {"update_status": "error", "reason": f"{e}"}
+    finally:
+        conn.close()
+
 def get_contacts(*, phone):
     conn = get_db_connection()
     if conn is None:

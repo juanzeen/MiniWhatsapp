@@ -121,6 +121,33 @@ async def handle_message(websocket, json_msg):
             print(f"Histórico de mensagens entre {phone1} e {phone2} resgatado com sucesso!")
         await websocket.send(json.dumps(msg_response))
 
+    elif message_type == "UPDATE_MESSAGES_DELIVERED":
+        receiver = json_msg.get("receiver")
+        req_id = json_msg.get("request_id")
+        res = await asyncio.to_thread(
+            repository.update_history_delivered_messages,
+            receiver=receiver,
+        )
+        msg_response = res | {"request_id": req_id}
+        if res["update_status"] == "success":
+            print(f"Status de mensagens enviadas para {receiver} atualizado para 'entregue' com sucesso!")
+        await websocket.send(json.dumps(msg_response))
+
+    elif message_type == "UPDATE_MESSAGES_READ":
+        sender = json_msg.get("sender_phone")
+        receiver = json_msg.get("receiver_phone")
+        new_status = json_msg.get("new_status")
+        req_id = json_msg.get("request_id")
+        res = await asyncio.to_thread(
+            repository.update_history_read_messages,
+            sender=sender,
+            receiver=receiver
+        )
+        msg_response = res | {"request_id": req_id}
+        if res["update_status"] == "success":
+            print(f"Status de mensagens de {sender} enviadas para {receiver} atualizadps para 'lido' com sucesso!")
+        await websocket.send(json.dumps(msg_response))
+
 #Lê a mensagem e envia confirmação de leitura para o sender
     elif message_type == "PROCESS_MESSAGE":
         message_id = json_msg.get("message_id")
