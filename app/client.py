@@ -4,6 +4,20 @@ from websockets.asyncio.client import connect
 import json
 from utils import URI, phone_check, name_check, nickname_check, password_check, format_date
 
+#Estilização geral do sistema
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.align import Align
+
+#Estilização pro chat (pra não quebrar formatação entre enviar mensagem e feedback)
+from prompt_toolkit import PromptSession
+from prompt_toolkit.patch_stdout import patch_stdout
+from prompt_toolkit import print_formatted_text
+from prompt_toolkit.formatted_text import HTML
+
+console = Console()
+
 pending_requests = {}
 
 async def receiver(websocket):
@@ -27,7 +41,9 @@ async def receiver(websocket):
                         "receiver_phone": data["receiver_phone"],
                         "new_status": "read"
                     }))
-                    print(f"\n{sender} [{format_date(data['timestamp'])}]: {data['content']}")
+
+                    print_formatted_text(HTML(f"\n<b><ansiblue>{sender}</ansiblue></b> <ansigray>[{format_date(data['timestamp'])}]:</ansigray> {data['content']}"))
+
                 else:
                     await websocket.send(json.dumps({
                         "type": "PROCESS_MESSAGE",
@@ -38,13 +54,14 @@ async def receiver(websocket):
                     }))
 
             elif data["type"] == "STATUS_UPDATE":
-                status_icon = {"sent": "✓", "delivered": "✓✓", "read": "✓✓🟢"}
-                print(f"\n[{status_icon.get(data['status'], '?')}]")
+                # 🟢 NOVO PRINT AQUI (Adequado para as notificações do sistema)
+                if data['status'] == 'read':
+                    print_formatted_text(HTML("\n<ansicyan>✓✓✓</ansicyan>"))
+                elif data['status'] == 'delivered':
+                    print_formatted_text(HTML("\n<ansiyellow>✓✓</ansiyellow>"))
 
-
-        except Exception as e :
-            print(data)
-            print(f"Erro ao receber mensagem: {e}")
+        except Exception as e:
+            console.print(f"[bold red]Erro ao receber mensagem:[/bold red] {e}")
             break
 
 async def send_messages(websocket, phone, contact_phone):
@@ -52,9 +69,14 @@ async def send_messages(websocket, phone, contact_phone):
     active_chat = contact_phone
 
     loop = asyncio.get_event_loop()
+
+    console.rule("[bold cyan]Conversa Iniciada (/sair para voltar)[/bold cyan]")
+
+    session = PromptSession()
+
     while True:
-        print("Você: ", end="", flush=True)
-        text = await loop.run_in_executor(None, input, "")
+        with patch_stdout():
+            text = await session.prompt_async("Você: ")
 
         if text.strip() == "/sair":
             active_chat = None
@@ -85,6 +107,7 @@ async def login_menu(websocket, phone):
     receiver_task = asyncio.create_task(receiver(websocket))
     loop = asyncio.get_event_loop()
     await asyncio.sleep(0.1)
+
     req_id = str(uuid.uuid4())
     future = asyncio.get_event_loop().create_future()
     pending_requests[req_id] = future
@@ -97,12 +120,14 @@ async def login_menu(websocket, phone):
         data = await asyncio.wait_for(future, timeout=5)
     except asyncio.TimeoutError:
         pending_requests.pop(req_id, None)
-        print("Timeout ao atualizar mensagens para 'recebida'. Tente novamente.")
+        console.print("[dim yellow]Timeout ao atualizar mensagens para 'recebida'. Tente novamente.[/dim yellow]")
     finally:
         pending_requests.pop(req_id, None)
 
     while True:
-        home_options = await loop.run_in_executor(None, input, "1-Contatos\n2-Adicionar novo contato\n3-Logout\n:")
+        console.print(Panel("[1] Contatos\n[2] Adicionar novo contato\n[3] Logout", title="[bold blue]Área do Usuário[/bold blue]", expand=True))
+        home_options = await loop.run_in_executor(None, input, ": ")
+
         if home_options == "1":
             req_id = str(uuid.uuid4())
             future = asyncio.get_event_loop().create_future()
@@ -116,23 +141,30 @@ async def login_menu(websocket, phone):
                 data = await asyncio.wait_for(future, timeout=5)
             except asyncio.TimeoutError:
                 pending_requests.pop(req_id, None)
-                print("Timeout ao obter lista de contatos. Tente novamente.")
+                console.print("[bold red]Timeout ao obter lista de contatos. Tente novamente.[/bold red]")
             finally:
                 pending_requests.pop(req_id, None)
 
             contacts = data["contacts"]
 
             if not contacts:
-                print("Você não possui contatos salvos. Adicione um novo contato para iniciar uma conversa.\n")
+                console.print("[yellow]Você não possui contatos salvos. Adicione um novo contato para iniciar uma conversa.[/yellow]\n")
                 continue
-
             else:
+                table = Table(title="Seus Contatos", style="cyan")
+                table.add_column("Opção", justify="center", style="bold white")
+                table.add_column("Nome", style="bold blue")
+                table.add_column("Telefone", style="dim")
+
                 for i, ctt in enumerate(contacts):
-                    print(f"{i+1} - {ctt['name']} ({ctt['phone']})\n\n")
+                    table.add_row(str(i+1), ctt['name'], ctt['phone'])
+
+                console.print(table)
 
                 selected_conversation = int(await loop.run_in_executor(None, input, "Selecione o contato da conversa: ")) - 1
                 contact_phone = contacts[selected_conversation]["phone"]
-                #Request para atualizar mensagens entregues
+                contact_name = contacts[selected_conversation]["name"]
+
                 if contact_phone:
                     status_req_id = str(uuid.uuid4())
                     status_future = asyncio.get_event_loop().create_future()
@@ -147,11 +179,10 @@ async def login_menu(websocket, phone):
                         data = await asyncio.wait_for(status_future, timeout=5)
                     except asyncio.TimeoutError:
                         pending_requests.pop(status_req_id, None)
-                        print("Timeout ao começar uma conversa. Tente novamente.")
+                        console.print("[dim yellow]Timeout ao atualizar status. Tente novamente.[/dim yellow]")
                     finally:
                         pending_requests.pop(status_req_id, None)
 
-                #Request para o historico de mensagens
                 msg_req_id = str(uuid.uuid4())
                 msg_future = asyncio.get_event_loop().create_future()
                 pending_requests[msg_req_id] = msg_future
@@ -166,30 +197,31 @@ async def login_menu(websocket, phone):
                     data = await asyncio.wait_for(msg_future, timeout=5)
                 except asyncio.TimeoutError:
                     pending_requests.pop(msg_req_id, None)
-                    print("Timeout ao obter historico de mensagem. Tente novamente.")
+                    console.print("[bold red]Timeout ao obter histórico de mensagem. Tente novamente.[/bold red]")
                 finally:
                     pending_requests.pop(msg_req_id, None)
 
                 history = data.get("messages", [])
-                status_icon = {"sent": "✓", "delivered": "✓✓", "read": "✓✓🟢"}
+                status_icon = {"sent": "✓", "delivered": "✓✓", "read": "✓✓✓"}
+
+                console.rule(f"[bold cyan]Histórico de Conversa[/bold cyan]")
                 for msg in history:
                     if msg["sender_phone"] == phone:
-                        txt = f"Você [{format_date(msg['timestamp'])}]: {msg['content']}"
-                        print(f"{txt[:150]:<{150}}  {status_icon[msg['status']]}")
+                        txt = f"Você \\[[dim]{format_date(msg['timestamp'])}[/dim]]: {msg['content']} [yellow]{status_icon[msg['status']]}[/yellow]"
+                        console.print(txt, justify="right", style="bold green")
                     else:
-                        txt = f"{contacts[selected_conversation]['name']} [{format_date(msg['timestamp'])}]: {msg['content']}"
-                        print(f"{txt[:150]:<150}")
+                        txt = f"{contact_name} \\[[dim]{format_date(msg['timestamp'])}[/dim]]: {msg['content']}"
+                        console.print(txt, justify="left", style="bold blue")
 
                 await send_messages(websocket, phone, contact_phone)
 
         elif home_options == "2":
             new_contact = await loop.run_in_executor(None, input, "Digite o número do seu novo contato: ")
             if new_contact == phone:
-                print("O número do seu novo contato não pode ser igual ao seu número.\n")
+                console.print("[bold red]O número do seu novo contato não pode ser igual ao seu número.[/bold red]\n")
                 continue
             message = await loop.run_in_executor(None, input, f"\nNovo contato: {new_contact}\nDigite a primeira mensagem: ")
-            # só poderá adicionar um novo contato se mandar uma mensagem,
-            # assim iniciando um novo histórico
+
             try:
                 req_id = str(uuid.uuid4())
                 future = asyncio.get_event_loop().create_future()
@@ -202,25 +234,24 @@ async def login_menu(websocket, phone):
                     "content": message
                 }))
 
-
                 try:
                     data = await asyncio.wait_for(future, timeout=5)
                 except asyncio.TimeoutError:
                     pending_requests.pop(req_id, None)
-                    print("Timeout ao começar uma conversa. Tente novamente.")
+                    console.print("[bold red]Timeout ao começar uma conversa. Tente novamente.[/bold red]")
                 finally:
                     pending_requests.pop(req_id, None)
 
                 if data["message_status"] == "sent":
-                    print("Contato adicionado!\n")
+                    console.print("[bold green]Contato adicionado com sucesso![/bold green]\n")
                 else:
-                    print("Erro ao adicionar novo contato! Tente novamente.")
+                    console.print("[bold red]Erro ao adicionar novo contato! Tente novamente.[/bold red]")
 
             except Exception as e:
-                print(f"Erro ao enviar mensagem ao novo contato: {e}")
+                console.print(f"[bold red]Erro ao enviar mensagem ao novo contato:[/bold red] {e}")
 
         elif home_options == "3":
-            print("Efetuando Logout...\n")
+            console.print("[cyan]Efetuando Logout...[/cyan]\n")
             req_id = str(uuid.uuid4())
             future = asyncio.get_event_loop().create_future()
             pending_requests[req_id] = future
@@ -233,28 +264,30 @@ async def login_menu(websocket, phone):
                 data = await asyncio.wait_for(future, timeout=5)
             except asyncio.TimeoutError:
                 pending_requests.pop(req_id, None)
-                print("Timeout ao fazer logout. Tente novamente.")
+                console.print("[bold red]Timeout ao fazer logout. Tente novamente.[/bold red]")
             finally:
                 pending_requests.pop(req_id, None)
+
             if data.get("logout_status") == "success":
-                print("Logout efetuado com sucesso!\n")
+                console.print(Align.center(Panel("[bold green]Logout efetuado com sucesso![/bold green]", expand=False)))
                 receiver_task.cancel()
                 try:
                     await receiver_task
                 except asyncio.CancelledError:
                     pass
             else:
-                print("Erro ao realizar logout! Tente novamente.")
+                console.print("[bold red]Erro ao realizar logout! Tente novamente.[/bold red]")
             break
         else:
-            print("Digite uma opção correta!\n")
+            console.print("[bold red]Digite uma opção correta![/bold red]\n")
 
 
 async def main():
     try:
         async with connect(URI) as websocket:
             while True:
-                option = input("1-Cadastro\n2-Login\n3-Sair do aplicativo\n:")
+                console.print(Panel("[1] Cadastro\n[2] Login\n[3] Sair do aplicativo", title="[bold magenta]Bem-vindo ao Mini Whatsapp[/bold magenta]", expand=True))
+                option = input(": ")
 
                 if option == "1":
                     while True:
@@ -278,7 +311,7 @@ async def main():
                             break
 
                     try:
-                        print("Realizando cadastro...")
+                        console.print("\n[cyan]Realizando cadastro...[/cyan]")
                         await websocket.send(json.dumps({
                             "type": "REGISTER",
                             "phone": phone,
@@ -291,12 +324,12 @@ async def main():
                         data = json.loads(response)
 
                         if data["register_status"] == "success":
-                            print("Cadastro criado com sucesso! Realize o Login.\n")
+                            console.print(Align.center(Panel("[bold green]Cadastro criado com sucesso! Realize o Login.[/bold green]", expand=False)))
                         elif data["register_status"] == "error":
-                            print(f"Erro ao realizar o cadastro!\nMotivo do erro: {data['reason']}\nTente novamente.\n")
+                            console.print(Align.center(Panel(f"[bold red]Erro ao realizar o cadastro![/bold red]\nMotivo do erro: {data['reason']}\nTente novamente.", expand=False)))
 
                     except Exception as e:
-                        print(f"Erro ao enviar dados de cadastro ao servidor: {e}")
+                        console.print(f"[bold red]Erro ao enviar dados de cadastro ao servidor:[/bold red] {e}")
 
                 elif option == "2":
                     while True:
@@ -310,7 +343,7 @@ async def main():
                             break
 
                     try:
-                        print("Efetuando login...")
+                        console.print("\n[cyan]Efetuando login...[/cyan]")
                         await websocket.send(json.dumps({
                             "type": "LOGIN",
                             "phone": phone,
@@ -321,23 +354,24 @@ async def main():
                         data = json.loads(response)
 
                         if data["login_status"] == "success":
-                            print("Login efetuado com sucesso!\n")
+                            console.print(Align.center(Panel("[bold green]Login efetuado com sucesso![/bold green]", expand=False)))
                             await login_menu(websocket, phone)
 
                         elif data["login_status"] == "error":
-                            print(f"Erro ao realizar o login!\nMotivo do erro: {data['reason']}\nTente novamente.\n")
+                            console.print(Align.center(Panel(f"[bold red]Erro ao realizar o login![/bold red]\nMotivo do erro: {data['reason']}\nTente novamente.", expand=False)))
 
                     except Exception as e:
-                        print(f"Erro ao enviar dados de login ao servidor: {e}")
+                        console.print(f"[bold red]Erro ao enviar dados de login ao servidor:[/bold red] {e}")
 
                 elif option == "3":
-                    print("Saindo do aplicativo...\n")
+                    console.print("[cyan]Saindo do aplicativo...[/cyan]\n")
                     break
 
                 else:
-                    print("Digite uma opção correta!\n")
+                    console.print("[bold red]Digite uma opção correta![/bold red]\n")
 
     except Exception as e:
-        print(f"Erro ao conectar ao servidor: {e}")
+        console.print(f"[bold red]Erro ao conectar ao servidor:[/bold red] {e}")
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
