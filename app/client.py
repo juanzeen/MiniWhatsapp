@@ -43,6 +43,7 @@ async def receiver(websocket):
 
 
         except Exception as e :
+            print(data)
             print(f"Erro ao receber mensagem: {e}")
             break
 
@@ -96,7 +97,7 @@ async def login_menu(websocket, phone):
         data = await asyncio.wait_for(future, timeout=5)
     except asyncio.TimeoutError:
         pending_requests.pop(req_id, None)
-        print("Timeout ao começar uma conversa. Tente novamente.")
+        print("Timeout ao atualizar mensagens para 'recebida'. Tente novamente.")
     finally:
         pending_requests.pop(req_id, None)
 
@@ -139,8 +140,8 @@ async def login_menu(websocket, phone):
                     await websocket.send(json.dumps({
                         "type": "UPDATE_MESSAGES_READ",
                         "request_id": status_req_id,
-                        "sender_phone": phone,
-                        "receiver_phone": contact_phone,
+                        "sender_phone": contact_phone,
+                        "receiver_phone": phone,
                     }))
                     try:
                         data = await asyncio.wait_for(status_future, timeout=5)

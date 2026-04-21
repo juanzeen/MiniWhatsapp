@@ -81,6 +81,7 @@ async def handle_message(websocket, json_msg):
                 try:
                     await connected_clients[receiver_phone].send(json.dumps({
                      "type": "NEW_MESSAGE",
+                     "sender_phone": sender_phone,
                      "receiver_phone": receiver_phone,
                      "content": content,
                      "timestamp": res.get("timestamp"),
@@ -130,7 +131,7 @@ async def handle_message(websocket, json_msg):
         )
         msg_response = res | {"request_id": req_id}
         if res["update_status"] == "success":
-            print(f"Status de mensagens enviadas para {receiver} atualizado para 'entregue' com sucesso!")
+            print(f"Status de mensagens enviadas para {receiver} atualizado para 'entregue' com sucesso! {res['updated_count']} mensagens atualizadas")
         await websocket.send(json.dumps(msg_response))
 
     elif message_type == "UPDATE_MESSAGES_READ":
@@ -145,13 +146,13 @@ async def handle_message(websocket, json_msg):
         )
         msg_response = res | {"request_id": req_id}
         if res["update_status"] == "success":
-            print(f"Status de mensagens de {sender} enviadas para {receiver} atualizadps para 'lido' com sucesso!")
+            print(f"Status de mensagens de {sender} enviadas para {receiver} atualizados para 'lido' com sucesso!")
         await websocket.send(json.dumps(msg_response))
 
 #Lê a mensagem e envia confirmação de leitura para o sender
     elif message_type == "PROCESS_MESSAGE":
         message_id = json_msg.get("message_id")
-        sender_phone =json_msg.get("sender_phone")
+        sender_phone = json_msg.get("sender_phone")
         new_status = json_msg.get("new_status")
         res = await asyncio.to_thread(
             repository.update_message_status,

@@ -128,7 +128,7 @@ def update_history_delivered_messages(*, receiver):
         return {"update_status": "error", "reason": "Database connection failed"}
     try:
         with conn.cursor() as cur:
-            cur.execute("UPDATE messages SET status = %s WHERE receiver_phone = %s AND status != %s", ("delivered", receiver, "delivered"))
+            cur.execute("UPDATE messages SET status = %s WHERE receiver_phone = %s AND status = %s", ("delivered", receiver, "sent"))
             updated_count = cur.rowcount
             conn.commit()
             return {"update_status": "success", "updated_count": updated_count}
