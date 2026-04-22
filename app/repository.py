@@ -52,8 +52,11 @@ def login_user(*, phone, password):
                 return {"login_status": "success"}
             else:
                 return {"login_status": "error", "reason": "Invalid phone number or password"}
-    except:
-        pass
+    except Exception as e:
+        print(f"Erro ao realizar login: {e}")
+        return {"login_status": "error", "reason": "Database error during login"}
+    finally:
+        conn.close()
 
 def register_message(*, sender_phone, receiver_phone, content):
     conn = get_db_connection()
@@ -81,6 +84,8 @@ def register_message(*, sender_phone, receiver_phone, content):
             return {"register_status": "success", "message_id": row[0], "timestamp": row[1].isoformat(), "message_status": row[2]}
     except Exception as e:
         return {"register_status": "error", "reason": f"{e}"}
+    finally:
+        conn.close()
 
 def get_messages(*, sender_phone, receiver_phone):
     conn = get_db_connection()
@@ -89,16 +94,20 @@ def get_messages(*, sender_phone, receiver_phone):
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT sender_phone, receiver_phone, content, timestamp FROM messages WHERE (sender_phone = %s AND receiver_phone = %s) OR (sender_phone = %s AND receiver_phone = %s) ORDER BY id",
+                "SELECT sender_phone, receiver_phone, content, timestamp, status FROM messages WHERE (sender_phone = %s AND receiver_phone = %s) OR (sender_phone = %s AND receiver_phone = %s) ORDER BY id",
                 (sender_phone, receiver_phone, receiver_phone, sender_phone)
             )
             messages = cur.fetchall()
-            return {"messages_status": "success", "messages": [{"sender_phone": data[0], "receiver_phone": data[1], "content": data[2], "timestamp": data[3].isoformat()} for data in messages]}
+            return {"messages_status": "success", "messages": [{"sender_phone": data[0], "receiver_phone": data[1], "content": data[2], "timestamp": data[3].isoformat(), "status": data[4]} for data in messages]}
     except:
         return {"messages_status": "error", "reason": "Database error"}
+    finally:
+        conn.close()
 
 def update_message_status(*, message_id, new_status):
     conn = get_db_connection()
+    if new_status not in ("sent", "delivered", "read"):
+        return {"update_status": "error", "reason": "Invalid status value"}
     if conn is None:
         return {"update_status": "error", "reason": "Database connection failed"}
     try:
@@ -110,6 +119,38 @@ def update_message_status(*, message_id, new_status):
             return {"update_status": "success", "status": new_status}
     except Exception as e:
         return {"update_status": "error", "reason": f"{e}"}
+    finally:
+        conn.close()
+
+def update_history_delivered_messages(*, receiver):
+    conn = get_db_connection()
+    if conn is None:
+        return {"update_status": "error", "reason": "Database connection failed"}
+    try:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE messages SET status = %s WHERE receiver_phone = %s AND status = %s", ("delivered", receiver, "sent"))
+            updated_count = cur.rowcount
+            conn.commit()
+            return {"update_status": "success", "updated_count": updated_count}
+    except Exception as e:
+        return {"update_status": "error", "reason": f"{e}"}
+    finally:
+        conn.close()
+
+def update_history_read_messages(*, sender, receiver):
+    conn = get_db_connection()
+    if conn is None:
+        return {"update_status": "error", "reason": "Database connection failed"}
+    try:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE messages SET status = %s WHERE sender_phone = %s AND receiver_phone = %s", ("read", sender, receiver))
+            updated_count = cur.rowcount
+            conn.commit()
+            return {"update_status": "success", "updated_count": updated_count}
+    except Exception as e:
+        return {"update_status": "error", "reason": f"{e}"}
+    finally:
+        conn.close()
 
 def get_contacts(*, phone):
     conn = get_db_connection()
@@ -125,3 +166,5 @@ def get_contacts(*, phone):
             return {"contacts_status": "success", "contacts": [{"name":data[0], "phone": data[1]} for data in contacts]}
     except:
         return {"contacts_status": "error", "reason": "Database error"}
+    finally:
+        conn.close()
