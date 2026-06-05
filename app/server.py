@@ -25,8 +25,6 @@ async def handle_message(websocket, json_msg):
                 nickname=json_msg.get("nickname"),
                 password=json_msg.get("password")
             )
-            if res["register_status"] == "success":
-                print("Novo usuário registrado: ", json_msg.get("phone"))
             await websocket.send(json.dumps(res))
 
         elif message_type == "LOGIN":
@@ -36,10 +34,13 @@ async def handle_message(websocket, json_msg):
                   phone=id,
                   password=json_msg.get("password")
                 )
-            if res["login_status"] == "success":
-                connected_clients[id] = websocket
-                print(f"Usuário {id} logado com sucesso!")
             await websocket.send(json.dumps(res))
+
+        elif message_type == "IDENTIFY":
+            id = json_msg.get("phone")
+            connected_clients[id] = websocket
+            print(f"Usuário {id} agora está ONLINE (em chat).")
+            await websocket.send(json.dumps({"type": "IDENTIFY_SUCCESS"}))
 
         elif message_type == "LOGOUT":
             id = json_msg.get("phone")
@@ -47,9 +48,7 @@ async def handle_message(websocket, json_msg):
             if id and id in connected_clients:
                 connected_clients.pop(id)
                 print(f"Usuário {id} deslogado com sucesso!")
-                await websocket.send(json.dumps({"request_id": req_id, "logout_status": "success"}))
-            else:
-                await websocket.send(json.dumps({"request_id": req_id, "logout_status": "error", "reason": "Usuário não está logado"}))
+            await websocket.send(json.dumps({"request_id": req_id, "logout_status": "success"}))
 
         elif message_type == "START_CHAT":
             sender_phone= json_msg.get("sender_phone")
@@ -63,8 +62,6 @@ async def handle_message(websocket, json_msg):
                 content=content
             )
             msg_response = res | {"request_id": req_id}
-            if res["register_status"] == "success":
-                print(f"Mensagem de {sender_phone} para {receiver_phone} registrada com sucesso!")
             await websocket.send(json.dumps(msg_response))
 
         elif message_type == "CHAT":
@@ -79,8 +76,7 @@ async def handle_message(websocket, json_msg):
                 content=content
             )
             msg_response = res | {"request_id": req_id}
-            if res["register_status"] == "success":
-                print(f"Mensagem de {sender_phone} para {receiver_phone} registrada com sucesso!")
+            if res.get("register_status") == "success":
                 if receiver_phone in connected_clients:
                     try:
                         await connected_clients[receiver_phone].send(json.dumps({
@@ -170,11 +166,10 @@ async def handle_message(websocket, json_msg):
         }))
     except Exception as e:
         print(f"Erro inesperado no servidor: {e}")
-        await websocket.send(json.dumps({
-            "request_id": json_msg.get("request_id"),
-            "error": "Erro interno no servidor"
-        }))
-
+        try:
+            await websocket.send(json.dumps({"error": "Erro interno no servidor"}))
+        except:
+            pass
 
 async def handler(websocket):
     phone = None
@@ -182,20 +177,19 @@ async def handler(websocket):
         async for message in websocket:
             try:
                 data = json.loads(message)
+                if data.get("type") in ["IDENTIFY", "LOGIN"]:
+                    phone = data.get("phone")
+                await handle_message(websocket, data)
             except json.JSONDecodeError:
-                print("Recebida mensagem JSON malformada")
                 continue
-                
-            if data.get("type") == "LOGIN":
-                phone = data.get("phone")
-            await handle_message(websocket, data)
+
     except Exception as e:
-        print(f"Erro na conexão com o cliente: {e}")
+        print(f"Conexão encerrada: {e}")
     finally:
         if phone and phone in connected_clients:
-            connected_clients.pop(phone, None)
-            print(f"Usuário {phone} desconectado.")
-
+            if connected_clients.get(phone) == websocket:
+                connected_clients.pop(phone, None)
+                print(f"Usuário {phone} saiu do modo chat e a conexão foi encerrada.")
 
 #Configurações de ping utilizadas para manter a conexão ativa e detectar clientes desconectados
 async def main():
